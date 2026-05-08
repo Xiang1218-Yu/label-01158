@@ -5,11 +5,19 @@ services:
     build:
       context: ./frontend-gui
       dockerfile: Dockerfile
+      args:
+        BUILD_PLATFORM: linux/amd64
+        TARGET_PLATFORM: linux/amd64
+    image: campus-nav-gui:latest
     container_name: campus-nav-gui
     environment:
-      - DISPLAY=${DISPLAY}
+      - DISPLAY=${DISPLAY:-:0}
       - QT_QPA_PLATFORM=xcb
+      - XDG_RUNTIME_DIR=/tmp/runtime-user
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/runtime-user:/tmp/runtime-user
     network_mode: host
     restart: unless-stopped
+    stdin_open: true
+    tty: true

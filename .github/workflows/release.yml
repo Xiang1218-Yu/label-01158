@@ -1,0 +1,337 @@
+name: CD - 自动发布
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号 (例如: v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-linux:
+    name: 构建 - Linux
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            qt6-base-dev \
+            libgl1-mesa-dev \
+            libxcb-xinerama0 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: 配置 CMake
+        run: |
+          cd frontend-gui
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+
+      - name: 编译项目
+        run: |
+          cd frontend-gui
+          cmake --build build -j$(nproc)
+
+      - name: 安装项目
+        run: |
+          cd frontend-gui
+          cmake --install build
+
+      - name: 创建发布包
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "refs/heads/main" ]; then
+            VERSION="${{ github.event.inputs.version || 'v1.0.0' }}"
+          fi
+          
+          mkdir -p ${{ github.workspace }}/release
+          
+          cd ${{ github.workspace }}/install/bin
+          tar -czf ${{ github.workspace }}/release/campus_nav_gui-linux-${VERSION}.tar.gz campus_nav_gui
+          
+          ls -la ${{ github.workspace }}/release/
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: ${{ github.workspace }}/release/
+          if-no-files-found: error
+          retention-days: 90
+
+  build-macos:
+    name: 构建 - macOS
+    runs-on: macos-14
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Homebrew 依赖
+        run: |
+          brew update
+          brew install cmake qt@6
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> $GITHUB_ENV
+
+      - name: 配置 CMake
+        run: |
+          cd frontend-gui
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+
+      - name: 编译项目
+        run: |
+          cd frontend-gui
+          cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: 安装项目
+        run: |
+          cd frontend-gui
+          cmake --install build
+
+      - name: 部署 Qt 依赖并创建 DMG
+        run: |
+          if [ -d "${{ github.workspace }}/install/campus_nav_gui.app" ]; then
+            MACDEPLOYQT=$(brew --prefix qt@6)/bin/macdeployqt
+            if [ -f "$MACDEPLOYQT" ]; then
+              $MACDEPLOYQT ${{ github.workspace }}/install/campus_nav_gui.app -dmg -verbose=1
+            fi
+          fi
+
+      - name: 创建发布包
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "refs/heads/main" ]; then
+            VERSION="${{ github.event.inputs.version || 'v1.0.0' }}"
+          fi
+          
+          mkdir -p ${{ github.workspace }}/release
+          
+          cd ${{ github.workspace }}/install
+          if [ -f "campus_nav_gui.dmg" ]; then
+            mv campus_nav_gui.dmg ${{ github.workspace }}/release/campus_nav_gui-macos-${VERSION}.dmg
+          else
+            hdiutil create -volname "Campus Nav GUI" \
+              -srcfolder campus_nav_gui.app \
+              -ov -format UDZO \
+              ${{ github.workspace }}/release/campus_nav_gui-macos-${VERSION}.dmg
+          fi
+          
+          ls -la ${{ github.workspace }}/release/
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: ${{ github.workspace }}/release/
+          if-no-files-found: error
+          retention-days: 90
+
+  build-windows:
+    name: 构建 - Windows
+    runs-on: windows-2022
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          install-deps: 'true'
+          cache: 'true'
+
+      - name: 设置 MSVC 开发环境
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: 配置 CMake
+        run: |
+          cd frontend-gui
+          cmake -B build -S . `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install `
+            -G "Visual Studio 17 2022" `
+            -A x64
+
+      - name: 编译项目
+        run: |
+          cd frontend-gui
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel $env:NUMBER_OF_PROCESSORS
+
+      - name: 安装项目
+        run: |
+          cd frontend-gui
+          cmake --install build --config ${{ env.BUILD_TYPE }}
+
+      - name: 部署 Qt 依赖
+        run: |
+          $executable = "${{ github.workspace }}\install\bin\campus_nav_gui.exe"
+          if (Test-Path $executable) {
+            $windeployqt = Join-Path $env:Qt6_DIR "bin\windeployqt.exe"
+            if (Test-Path $windeployqt) {
+              & $windeployqt $executable --release --no-translations --no-compiler-runtime
+            }
+          }
+
+      - name: 创建发布包
+        run: |
+          $version = "${{ github.ref_name }}"
+          if ([string]::IsNullOrEmpty($version) -or $version -eq "refs/heads/main") {
+            $version = "${{ github.event.inputs.version || 'v1.0.0' }}"
+          }
+          
+          $releaseDir = "${{ github.workspace }}\release"
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          
+          $packageDir = "${{ github.workspace }}\install\bin"
+          $zipPath = Join-Path $releaseDir "campus_nav_gui-windows-$version.zip"
+          
+          Compress-Archive -Path "$packageDir\*" -DestinationPath $zipPath -Force
+          
+          Get-ChildItem -Path $releaseDir
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: ${{ github.workspace }}\release\
+          if-no-files-found: error
+          retention-days: 90
+
+  create-release:
+    name: 创建 GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos, build-windows]
+    if: always()
+    
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 确定版本号
+        id: get_version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [[ "$VERSION" == refs/heads/* ]]; then
+            VERSION="${{ github.event.inputs.version || 'v1.0.0' }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_NO_V=$(echo $VERSION | sed 's/^v//')" >> $GITHUB_OUTPUT
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ github.workspace }}/all-artifacts
+
+      - name: 收集发布文件
+        run: |
+          mkdir -p ${{ github.workspace }}/final-release
+          find ${{ github.workspace }}/all-artifacts -type f \( -name "*.tar.gz" -o -name "*.dmg" -o -name "*.zip" \) \
+            -exec cp {} ${{ github.workspace }}/final-release/ \;
+          
+          echo "=== 发布文件列表 ==="
+          ls -la ${{ github.workspace }}/final-release/
+
+      - name: 生成发布说明
+        run: |
+          cat > ${{ github.workspace }}/CHANGELOG.md << 'EOF'
+          # 校园导航系统 ${{ steps.get_version.outputs.VERSION }}
+          
+          ## 发布说明
+          
+          ### 支持平台
+          - ✅ Linux (Ubuntu 22.04+)
+          - ✅ macOS 14+ (Intel/Apple Silicon)
+          - ✅ Windows 10/11 (64-bit)
+          
+          ### 主要功能
+          - 校园地图可视化显示
+          - 景点信息查询
+          - 两点最短路径查询 (Dijkstra 算法)
+          - 多景点最佳路线规划 (贪心算法)
+          
+          ### 技术栈
+          - C++17
+          - Qt6
+          - CMake
+          
+          ### 安装使用
+          
+          **Windows:**
+          1. 下载 `campus_nav_gui-windows-*.zip`
+          2. 解压到任意目录
+          3. 双击 `campus_nav_gui.exe` 运行
+          
+          **macOS:**
+          1. 下载 `campus_nav_gui-macos-*.dmg`
+          2. 双击打开，将 App 拖拽到应用程序文件夹
+          3. 首次运行可能需要在「系统设置 → 隐私与安全性」中允许运行
+          
+          **Linux:**
+          1. 下载 `campus_nav_gui-linux-*.tar.gz`
+          2. 解压: `tar -xzf campus_nav_gui-linux-*.tar.gz`
+          3. 运行: `./campus_nav_gui`
+          
+          **Docker:**
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}/campus-nav-gui:${{ steps.get_version.outputs.VERSION }}
+          \`\`\`
+          
+          ---
+          
+          此发布由 GitHub Actions 自动构建。
+          
+          Commit: \`${{ github.sha }}\`
+          EOF
+
+      - name: 创建 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: 校园导航系统 ${{ steps.get_version.outputs.VERSION }}
+          body_path: ${{ github.workspace }}/CHANGELOG.md
+          files: ${{ github.workspace }}/final-release/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 发布完成
+        run: |
+          echo "✅ 发布流程完成！"
+          echo ""
+          echo "版本: ${{ steps.get_version.outputs.VERSION }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          echo "发布文件:"
+          ls -1 ${{ github.workspace }}/final-release/

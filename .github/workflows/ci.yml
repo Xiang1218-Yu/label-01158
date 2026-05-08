@@ -1,0 +1,213 @@
+name: CI - 跨平台构建测试
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-linux:
+    name: Linux (Ubuntu)
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            qt6-base-dev \
+            libgl1-mesa-dev \
+            libxcb-xinerama0 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: 配置 CMake
+        run: |
+          cd frontend-gui
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+
+      - name: 编译项目
+        run: |
+          cd frontend-gui
+          cmake --build build -j$(nproc)
+
+      - name: 安装项目
+        run: |
+          cd frontend-gui
+          cmake --install build
+
+      - name: 验证可执行文件
+        run: |
+          ls -la ${{ github.workspace }}/install/bin/
+          file ${{ github.workspace }}/install/bin/campus_nav_gui
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-linux
+          path: ${{ github.workspace }}/install/bin/
+          if-no-files-found: error
+          retention-days: 30
+
+  build-macos:
+    name: macOS
+    runs-on: macos-14
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Homebrew 依赖
+        run: |
+          brew update
+          brew install cmake qt@6
+          echo "/usr/local/opt/qt@6/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/qt@6/bin" >> $GITHUB_PATH
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> $GITHUB_ENV
+
+      - name: 配置 CMake
+        run: |
+          cd frontend-gui
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+
+      - name: 编译项目
+        run: |
+          cd frontend-gui
+          cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: 安装项目
+        run: |
+          cd frontend-gui
+          cmake --install build
+
+      - name: 验证构建产物
+        run: |
+          ls -la ${{ github.workspace }}/install/
+          if [ -d "${{ github.workspace }}/install/campus_nav_gui.app" ]; then
+            echo "macOS App Bundle 已生成"
+            ls -la ${{ github.workspace }}/install/campus_nav_gui.app/
+          fi
+
+      - name: 部署 Qt 依赖 (macdeployqt)
+        run: |
+          if [ -d "${{ github.workspace }}/install/campus_nav_gui.app" ]; then
+            MACDEPLOYQT=$(brew --prefix qt@6)/bin/macdeployqt
+            if [ -f "$MACDEPLOYQT" ]; then
+              $MACDEPLOYQT ${{ github.workspace }}/install/campus_nav_gui.app -dmg -verbose=1
+              ls -la ${{ github.workspace }}/install/
+            fi
+          fi
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-macos
+          path: |
+            ${{ github.workspace }}/install/campus_nav_gui.app
+            ${{ github.workspace }}/install/*.dmg
+          if-no-files-found: warn
+          retention-days: 30
+
+  build-windows:
+    name: Windows
+    runs-on: windows-2022
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          install-deps: 'true'
+          cache: 'true'
+
+      - name: 设置 MSVC 开发环境
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: 配置 CMake
+        run: |
+          cd frontend-gui
+          cmake -B build -S . `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install `
+            -G "Visual Studio 17 2022" `
+            -A x64
+
+      - name: 编译项目
+        run: |
+          cd frontend-gui
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel $env:NUMBER_OF_PROCESSORS
+
+      - name: 安装项目
+        run: |
+          cd frontend-gui
+          cmake --install build --config ${{ env.BUILD_TYPE }}
+
+      - name: 验证可执行文件
+        run: |
+          Get-ChildItem -Path ${{ github.workspace }}\install -Recurse
+
+      - name: 部署 Qt 依赖 (windeployqt)
+        run: |
+          $executable = "${{ github.workspace }}\install\bin\campus_nav_gui.exe"
+          if (Test-Path $executable) {
+            $windeployqt = Join-Path $env:Qt6_DIR "bin\windeployqt.exe"
+            if (Test-Path $windeployqt) {
+              & $windeployqt $executable --release --no-translations --no-compiler-runtime
+            }
+          }
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-windows
+          path: ${{ github.workspace }}/install/bin/
+          if-no-files-found: error
+          retention-days: 30
+
+  summary:
+    name: 构建汇总
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos, build-windows]
+    if: always()
+    
+    steps:
+      - name: 检查构建结果
+        run: |
+          echo "=== 跨平台构建完成 ==="
+          echo ""
+          echo "Linux 构建: ${{ needs.build-linux.result }}"
+          echo "macOS 构建: ${{ needs.build-macos.result }}"
+          echo "Windows 构建: ${{ needs.build-windows.result }}"
+          echo ""
+          
+          if [ "${{ needs.build-linux.result }}" == "success" ] && \
+             [ "${{ needs.build-macos.result }}" == "success" ] && \
+             [ "${{ needs.build-windows.result }}" == "success" ]; then
+            echo "✅ 所有平台构建成功！"
+            exit 0
+          else
+            echo "❌ 部分平台构建失败"
+            exit 1
+          fi
