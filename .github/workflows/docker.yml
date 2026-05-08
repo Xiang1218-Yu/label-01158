@@ -1,0 +1,121 @@
+name: CI - Docker 镜像构建
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  DOCKER_FILE: ./frontend-gui/Dockerfile
+  DOCKER_CONTEXT: ./frontend-gui
+
+jobs:
+  build-docker:
+    name: Docker 镜像构建
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 登录 Docker Hub
+        if: github.event_name != 'pull_request' && secrets.DOCKER_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 提取元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}/campus-nav-gui
+            ${{ secrets.DOCKER_USERNAME && format('{0}/campus-nav-gui', secrets.DOCKER_USERNAME) || '' }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ env.DOCKER_CONTEXT }}
+          file: ${{ env.DOCKER_FILE }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 输出镜像信息
+        run: |
+          echo "=== Docker 镜像构建完成 ==="
+          echo ""
+          echo "镜像标签:"
+          echo "${{ steps.meta.outputs.tags }}"
+          echo ""
+          echo "标签详情:"
+          echo "${{ steps.meta.outputs.json }}"
+
+  extract-artifact:
+    name: 提取可执行文件
+    runs-on: ubuntu-latest
+    needs: build-docker
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 拉取镜像并提取可执行文件
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository }}/campus-nav-gui:${{ github.sha }}"
+          
+          docker pull $IMAGE_NAME
+          
+          docker create --name temp-container $IMAGE_NAME
+          mkdir -p ./docker-artifact
+          docker cp temp-container:/app/campus_nav_gui ./docker-artifact/
+          docker rm temp-container
+          
+          ls -la ./docker-artifact/
+          file ./docker-artifact/campus_nav_gui
+
+      - name: 上传可执行文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-docker
+          path: ./docker-artifact/
+          if-no-files-found: error
+          retention-days: 90

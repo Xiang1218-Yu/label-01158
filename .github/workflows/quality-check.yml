@@ -1,0 +1,138 @@
+name: CI - 代码质量检查
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  check-format:
+    name: 代码格式检查
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: 检查 C++ 代码格式
+        run: |
+          echo "=== 检查 C++ 代码格式 ==="
+          
+          FILES=$(find frontend-gui -name "*.cpp" -o -name "*.h")
+          
+          HAS_ISSUES=0
+          for file in $FILES; do
+            if ! clang-format --dry-run --Werror "$file" 2>&1; then
+              echo "❌ 格式问题: $file"
+              HAS_ISSUES=1
+            fi
+          done
+          
+          if [ $HAS_ISSUES -eq 1 ]; then
+            echo ""
+            echo "建议运行: clang-format -i <file> 来修复格式问题"
+            exit 1
+          else
+            echo "✅ 所有文件格式正确"
+          fi
+
+  check-cmake:
+    name: CMake 检查
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 cmake-lint
+        run: |
+          pip install cmake-lint
+
+      - name: 检查 CMakeLists.txt
+        run: |
+          echo "=== 检查 CMakeLists.txt ==="
+          
+          if cmake-lint frontend-gui/CMakeLists.txt; then
+            echo "✅ CMakeLists.txt 检查通过"
+          else
+            echo "⚠️ CMakeLists.txt 存在建议的改进点"
+          fi
+
+  check-scripts:
+    name: 脚本检查
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 shell 脚本语法
+        run: |
+          echo "=== 检查 Shell 脚本 ==="
+          
+          if [ -f "build.sh" ]; then
+            bash -n build.sh
+            echo "✅ build.sh 语法正确"
+          fi
+
+      - name: 检查 PowerShell 脚本
+        if: false
+        run: |
+          echo "PowerShell 脚本检查 (仅在 Windows runner 上执行)"
+
+  security-scan:
+    name: 安全扫描
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化 CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          queries: security-extended,security-and-quality
+
+      - name: 自动构建
+        uses: github/codeql-action/autobuild@v3
+
+      - name: 执行 CodeQL 分析
+        uses: github/codeql-action/analyze@v3
+
+  summary:
+    name: 检查汇总
+    runs-on: ubuntu-latest
+    needs: [check-format, check-cmake, check-scripts, security-scan]
+    if: always()
+    
+    steps:
+      - name: 输出检查结果
+        run: |
+          echo "=== 代码质量检查完成 ==="
+          echo ""
+          echo "代码格式: ${{ needs.check-format.result }}"
+          echo "CMake 检查: ${{ needs.check-cmake.result }}"
+          echo "脚本检查: ${{ needs.check-scripts.result }}"
+          echo "安全扫描: ${{ needs.security-scan.result }}"
+          echo ""
+          
+          if [ "${{ needs.check-format.result }}" == "success" ] && \
+             [ "${{ needs.check-cmake.result }}" == "success" ] && \
+             [ "${{ needs.check-scripts.result }}" == "success" ] && \
+             [ "${{ needs.security-scan.result }}" == "success" ]; then
+            echo "✅ 所有检查通过！"
+          else
+            echo "⚠️ 部分检查未通过，请查看详情"
+          fi

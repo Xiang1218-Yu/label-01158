@@ -2,6 +2,68 @@
 
 基于最短路径算法的校园导游程序，使用 Qt6 图形界面，为来访客人提供景点信息查询和路径规划服务。
 
+---
+
+## CI/CD 持续集成
+
+本项目使用 GitHub Actions 实现全自动化的持续集成和持续部署流程。
+
+### 工作流概览
+
+| 工作流 | 触发条件 | 说明 |
+|--------|----------|------|
+| [**CI - 跨平台构建测试**](.github/workflows/ci.yml) | `push` / `pull_request` | Linux/macOS/Windows 三平台构建验证 |
+| [**CI - 代码质量检查**](.github/workflows/quality-check.yml) | `push` / `pull_request` | 代码格式、安全扫描 |
+| [**CI - Docker 镜像构建**](.github/workflows/docker.yml) | `push` / `pull_request` / `tag` | 自动构建并推送 Docker 镜像 |
+| [**CD - 自动发布**](.github/workflows/release.yml) | `tag: v*` | 自动打包并创建 GitHub Release |
+
+### 构建状态徽章
+
+将以下代码添加到 README 开头，显示构建状态：
+
+```markdown
+![CI - 跨平台构建测试](https://github.com/USERNAME/REPO/actions/workflows/ci.yml/badge.svg)
+![CI - 代码质量检查](https://github.com/USERNAME/REPO/actions/workflows/quality-check.yml/badge.svg)
+![CI - Docker 镜像构建](https://github.com/USERNAME/REPO/actions/workflows/docker.yml/badge.svg)
+```
+
+### 发布新版本
+
+```bash
+# 1. 创建并推送标签
+git tag v1.0.0
+git push origin v1.0.0
+
+# 或者使用语义化版本
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+推送标签后，GitHub Actions 会自动：
+1. 🔧 构建三个平台的可执行文件
+2. 📦 自动打包（tar.gz / dmg / zip）
+3. 🚢 构建并推送 Docker 镜像
+4. 📝 创建 GitHub Release 并上传所有产物
+
+### Docker 镜像
+
+镜像会自动推送到 GitHub Container Registry：
+
+```bash
+# 拉取最新版本
+docker pull ghcr.io/USERNAME/REPO/campus-nav-gui:latest
+
+# 拉取特定版本
+docker pull ghcr.io/USERNAME/REPO/campus-nav-gui:v1.0.0
+
+# 运行
+xhost +local:docker
+docker run -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  ghcr.io/USERNAME/REPO/campus-nav-gui:latest
+```
+
+---
+
 ## How to Run
 
 ### 快速启动（3步）
@@ -138,11 +200,50 @@ docker-compose down
 | 图形绘制 | QPainter | Qt 2D 绑图引擎 |
 | 构建工具 | CMake | 跨平台构建系统 |
 | 容器化 | Docker | 可选的容器化部署 |
+| CI/CD | GitHub Actions | 自动化构建和发布 |
+| 代码检查 | CodeQL | 安全漏洞扫描 |
 
 ### 核心算法
 
 - **Dijkstra 算法**：求解两点间最短路径，时间复杂度 O((V+E)logV)
 - **贪心算法**：多景点路径规划，每次选择最近的未访问景点
+
+---
+
+## CI/CD 工作流
+
+```
+代码提交 / Pull Request
+    │
+    ▼
+┌─────────────────┐     ┌─────────────────┐
+│  代码质量检查   │     │  跨平台构建测试 │
+│  - clang-format │ ──► │  - Linux        │
+│  - cmake-lint   │     │  - macOS        │
+│  - CodeQL 扫描  │     │  - Windows      │
+└─────────────────┘     └─────────────────┘
+    │                          │
+    └──────────┬───────────────┘
+               ▼
+        合并到 main 分支
+               │
+               ▼
+        ┌─────────────────┐
+        │ Docker 镜像构建 │
+        │ - linux/amd64   │
+        │ - linux/arm64   │
+        └─────────────────┘
+               │
+               ▼
+        推送标签 vX.X.X
+               │
+               ▼
+        ┌─────────────────┐
+        │  自动发布       │
+        │ - 三平台打包    │
+        │ - GitHub Release│
+        └─────────────────┘
+```
 
 ---
 
