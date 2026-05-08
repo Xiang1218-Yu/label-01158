@@ -1,0 +1,71 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake 配置",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["-B", "build", "-S", "."],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend-gui"
+            },
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "编译项目",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build"],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend-gui"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "dependsOn": "CMake 配置"
+        },
+        {
+            "label": "清理构建",
+            "type": "shell",
+            "command": "rm",
+            "args": ["-rf", "build"],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend-gui"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "运行程序",
+            "type": "shell",
+            "command": "./build/campus_nav_gui",
+            "options": {
+                "cwd": "${workspaceFolder}/frontend-gui"
+            },
+            "dependsOn": "编译项目",
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker 构建运行",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": ["up", "--build"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker 停止",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": ["down"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

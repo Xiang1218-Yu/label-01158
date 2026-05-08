@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  campus-nav-gui:
+    build:
+      context: ./frontend-gui
+      dockerfile: Dockerfile
+    container_name: campus-nav-gui
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_QPA_PLATFORM=xcb
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+    restart: unless-stopped

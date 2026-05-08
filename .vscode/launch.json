@@ -1,0 +1,38 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "调试 Qt 程序",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/frontend-gui/build/campus_nav_gui",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/frontend-gui",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "编译项目",
+            "setupCommands": [
+                {
+                    "description": "启用整齐打印",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "运行程序（无调试）",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/frontend-gui/build/campus_nav_gui",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/frontend-gui",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "编译项目"
+        }
+    ]
+}

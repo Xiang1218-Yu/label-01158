@@ -1,0 +1,42 @@
+# 构建目录
+frontend-gui/build/
+build/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# 编译产物
+*.o
+*.obj
+*.exe
+*.out
+*.app
+campus_nav_gui
+moc_*
+ui_*
+qrc_*
+
+# Qt
+*.pro.user
+*.qm
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+# 临时文件
+*.tmp
+*.temp
