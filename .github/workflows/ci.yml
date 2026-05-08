@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-linux:
+    name: Linux Build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake qt6-base-dev libgl1-mesa-dev build-essential
+
+      - name: Configure
+        run: cmake -B frontend-gui/build -S frontend-gui
+
+      - name: Build
+        run: cmake --build frontend-gui/build --parallel $(nproc)
+
+      - name: Verify binary
+        run: test -f frontend-gui/build/campus_nav_gui
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-linux
+          path: frontend-gui/build/campus_nav_gui
+          retention-days: 7
+
+  build-macos:
+    name: macOS Build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake qt@6
+
+      - name: Configure
+        run: cmake -B frontend-gui/build -S frontend-gui -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6)
+
+      - name: Build
+        run: cmake --build frontend-gui/build --parallel $(sysctl -n hw.ncpu)
+
+      - name: Verify binary
+        run: test -f frontend-gui/build/campus_nav_gui
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-macos
+          path: frontend-gui/build/campus_nav_gui
+          retention-days: 7
+
+  build-windows:
+    name: Windows Build
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.5.*'
+          modules: 'qtwidgets'
+
+      - name: Configure
+        run: cmake -B frontend-gui/build -S frontend-gui
+
+      - name: Build
+        run: cmake --build frontend-gui/build --config Release --parallel
+
+      - name: Verify binary
+        run: Test-Path frontend-gui/build/Release/campus_nav_gui.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus_nav_gui-windows
+          path: frontend-gui/build/Release/campus_nav_gui.exe
+          retention-days: 7

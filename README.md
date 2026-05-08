@@ -4,27 +4,65 @@
 
 ## How to Run
 
-### 快速启动（3步）
+### 自动化构建（推荐）
 
+项目提供跨平台自动化构建脚本，一键完成依赖安装、编译和打包。
+
+**macOS / Linux:**
 ```bash
-# 步骤1: 进入项目目录，创建构建文件夹
-cd frontend-gui
-mkdir -p build
-cd build
+# 首次使用：安装依赖
+./scripts/build.sh install
 
-# 步骤2: 配置并编译
-cmake ..
-make
+# 编译项目
+./scripts/build.sh build
 
-# 步骤3: 运行程序
-./campus_nav_gui
+# 编译并运行
+./scripts/build.sh run
+
+# 编译并打包
+./scripts/build.sh package
 ```
+
+**Windows:**
+```cmd
+REM 首次使用：安装依赖
+scripts\build.bat install
+
+REM 编译项目
+scripts\build.bat build
+
+REM 编译并运行
+scripts\build.bat run
+
+REM 编译并打包
+scripts\build.bat package
+```
+
+**可用命令：**
+
+| 命令 | 说明 |
+|------|------|
+| `install` | 自动检测平台并安装依赖 |
+| `configure` | 配置 CMake 构建 |
+| `build` | 编译项目 |
+| `clean` | 清理构建目录 |
+| `package` | 编译并打包为可分发格式 |
+| `run` | 编译并运行 |
+| `docker` | 使用 Docker 构建 (仅 macOS/Linux) |
+
+**打包产物：**
+- macOS → `dist/campus_nav_gui.app` (含 Qt 框架依赖)
+- Linux → `dist/campus_nav_gui-linux-YYYYMMDD.tar.gz`
+- Windows → `dist/campus_nav_gui-windows-YYYYMMDD.zip` (含 Qt DLL)
 
 ---
 
-### 详细说明
+### 手动构建
 
-#### 环境要求
+<details>
+<summary>点击展开手动构建步骤</summary>
+
+#### 步骤1: 安装依赖
 
 **macOS:**
 ```bash
@@ -38,14 +76,32 @@ sudo apt-get install cmake qt6-base-dev libgl1-mesa-dev
 
 **Windows:**
 - 安装 [Qt6](https://www.qt.io/download) 和 [CMake](https://cmake.org/download/)
+- 设置环境变量: `set CMAKE_PREFIX_PATH=C:\Qt\6.x.x\msvc2022_64`
 
-#### VS Code 调试运行
+#### 步骤2: 编译
+
+```bash
+cd frontend-gui
+mkdir -p build && cd build
+cmake ..
+make
+```
+
+#### 步骤3: 运行
+
+```bash
+./campus_nav_gui
+```
+
+</details>
+
+### VS Code 调试运行
 
 1. 用 VS Code 打开项目根目录
 2. 按 `Cmd+Shift+B` (macOS) 或 `Ctrl+Shift+B` (Windows/Linux) 编译
 3. 按 `F5` 启动调试
 
-#### Docker 运行（Linux with X11）
+### Docker 运行（Linux with X11）
 
 ```bash
 # 允许 X11 连接
@@ -57,6 +113,40 @@ docker-compose up --build
 # 停止
 docker-compose down
 ```
+
+### CI/CD 自动构建与发布
+
+项目配置了 GitHub Actions，实现全自动的持续集成和发布流程。
+
+**持续集成 (CI)：**
+
+每次推送到 `main`/`master`/`develop` 分支或提交 PR 时，自动在三个平台上编译：
+
+| 平台 | Runner | 依赖安装方式 |
+|------|--------|------------|
+| Linux | ubuntu-22.04 | apt |
+| macOS | macos-14 (ARM) | Homebrew |
+| Windows | windows-2022 | install-qt-action |
+
+编译产物会作为 Artifact 保留 7 天，可供下载验证。
+
+**自动发布 (Release)：**
+
+推送版本标签时自动打包发布到 GitHub Releases：
+
+```bash
+# 创建版本标签并推送，触发自动发布
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+自动生成的发布产物：
+
+| 平台 | 产物格式 | 说明 |
+|------|---------|------|
+| Linux | `campus_nav_gui-linux-x86_64.tar.gz` | 含可执行文件 |
+| macOS | `campus_nav_gui-macos-arm64.dmg` | 含 Qt 框架的 DMG 镜像 |
+| Windows | `campus_nav_gui-windows-x86_64.zip` | 含 Qt DLL 的完整包 |
 
 ## Services
 
@@ -137,6 +227,7 @@ docker-compose down
 | GUI框架 | Qt6 | 跨平台图形界面框架 |
 | 图形绘制 | QPainter | Qt 2D 绑图引擎 |
 | 构建工具 | CMake | 跨平台构建系统 |
+| CI/CD | GitHub Actions | 自动编译和发布 |
 | 容器化 | Docker | 可选的容器化部署 |
 
 ### 核心算法
@@ -163,6 +254,13 @@ docker-compose down
 │   │   └── campus_data.cpp    # 校园数据初始化
 │   ├── CMakeLists.txt         # CMake 配置
 │   └── Dockerfile             # Docker 配置
+├── scripts/                   # 自动化构建脚本
+│   ├── build.sh               # macOS/Linux 构建脚本
+│   └── build.bat              # Windows 构建脚本
+├── .github/                   # CI/CD 配置
+│   └── workflows/
+│       ├── ci.yml             # 持续集成工作流
+│       └── release.yml        # 自动发布工作流
 ├── .vscode/                   # VS Code 配置
 │   ├── launch.json            # 调试配置
 │   └── tasks.json             # 任务配置
