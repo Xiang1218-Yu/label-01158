@@ -25,3 +25,28 @@ target_include_directories(campus_nav_gui PRIVATE
 )
 
 target_link_libraries(campus_nav_gui PRIVATE Qt6::Widgets)
+
+install(TARGETS campus_nav_gui
+    RUNTIME DESTINATION bin
+    BUNDLE DESTINATION .
+)
+
+install(FILES resources/resources.qrc
+    DESTINATION share/${PROJECT_NAME}
+)
+
+set(CPACK_PACKAGE_NAME "campus_nav_gui")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_DESCRIPTION "安徽理工大学校园导航系统")
+set(CPACK_PACKAGE_VENDOR "AUST")
+
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+    set(CPACK_DMG_DISABLE_APPLICATIONS_SYMLINK ON)
+elseif(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+
+include(CPack)

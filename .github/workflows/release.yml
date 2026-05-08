@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    name: Linux Release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake qt6-base-dev libgl1-mesa-dev build-essential
+
+      - name: Build
+        run: |
+          cmake -B frontend-gui/build -S frontend-gui -DCMAKE_BUILD_TYPE=Release
+          cmake --build frontend-gui/build --parallel $(nproc)
+
+      - name: Package
+        run: |
+          mkdir -p dist/campus_nav_gui/bin
+          cp frontend-gui/build/campus_nav_gui dist/campus_nav_gui/bin/
+          cd dist
+          tar -czf campus_nav_gui-linux-x86_64.tar.gz campus_nav_gui/
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/campus_nav_gui-linux-x86_64.tar.gz
+
+  release-macos:
+    name: macOS Release
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake qt@6
+
+      - name: Build
+        run: |
+          cmake -B frontend-gui/build -S frontend-gui \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6)
+          cmake --build frontend-gui/build --parallel $(sysctl -n hw.ncpu)
+
+      - name: Create app bundle
+        run: |
+          mkdir -p dist/campus_nav_gui.app/Contents/MacOS
+          mkdir -p dist/campus_nav_gui.app/Contents/Resources
+          cp frontend-gui/build/campus_nav_gui dist/campus_nav_gui.app/Contents/MacOS/
+
+          cat > dist/campus_nav_gui.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>campus_nav_gui</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.aust.campus_nav_gui</string>
+              <key>CFBundleName</key>
+              <string>Campus Navigator</string>
+              <key>CFBundleVersion</key>
+              <string>1.0.0</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Deploy Qt frameworks
+        run: $(brew --prefix qt@6)/bin/macdeployqt dist/campus_nav_gui.app
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "Campus Navigator" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 400 185 \
+            campus_nav_gui-macos-arm64.dmg \
+            dist/campus_nav_gui.app
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: campus_nav_gui-macos-arm64.dmg
+
+  release-windows:
+    name: Windows Release
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.5.*'
+          modules: 'qtwidgets'
+
+      - name: Build
+        run: |
+          cmake -B frontend-gui/build -S frontend-gui -DCMAKE_BUILD_TYPE=Release
+          cmake --build frontend-gui/build --config Release --parallel
+
+      - name: Deploy Qt DLLs
+        run: |
+          mkdir dist
+          cp frontend-gui/build/Release/campus_nav_gui.exe dist/
+          windeployqt --release --no-translations dist/campus_nav_gui.exe
+
+      - name: Create ZIP
+        run: Compress-Archive -Path dist/* -DestinationPath campus_nav_gui-windows-x86_64.zip
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: campus_nav_gui-windows-x86_64.zip
